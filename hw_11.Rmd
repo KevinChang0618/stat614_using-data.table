@@ -1,0 +1,145 @@
+---
+title: "HW 11"
+author: "Yujui Chang"
+date: "`r Sys.Date()`"
+output: html_document
+urlcolor: "blue"
+params:
+  solutions: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo       = params$solutions, 
+                      eval       = params$solutions,
+                      fig.align  = "center",
+                      fig.height = 3, 
+                      fig.width  = 5)
+```
+
+# Instructions
+
+- Write your solutions in this starter file. You should modify the 
+  "author" field in the YAML header.
+- Do not modify the paths of any files.
+- Only commit R Markdown and HTML files (no PDF or Word files). Make sure
+  you have knitted to HTML for your final submission.
+- **Make sure to commit each time you answer a question.** Lack of informative
+  and frequent commits will result in point deductions.
+- Only include the necessary code, not any extraneous code, to answer the 
+  questions.
+- For this homework, **use only data.table and not the tidyverse**.
+- Learning objectives:
+    - Manipulating data.tables.
+    - Tidying data.tables.
+
+# Bob Ross
+
+The data in "bob.csv" contains information on episodes hosted
+by [Bob Ross](https://en.wikipedia.org/wiki/Bob_Ross), a painter who hosted a 
+popular television series on PBS. Each episode 
+would consist of him completing an entire painting. His paintings almost 
+always consisted heavily of elements from nature: trees, clouds, mountains, 
+lakes, etc. These data consist of indicators for what elements are in each 
+episode. This dataset was taken from the excellent crew at
+[fivethirtyeight](https://github.com/fivethirtyeight/data/tree/master/bob-ross). 
+See [here](https://fivethirtyeight.com/features/a-statistical-analysis-of-the-work-of-bob-ross/) 
+for their article. The variables are:
+
+- `EPISODE`: The season and episode number of the episode.
+- `TITLE`: The title of the painting.
+- Every other variable is an indicator for whether the episode contains 
+  the element described by the variable name. For example, `BARN` 
+  is `0` if the episode does not have a barn in the painting and `1` if the 
+  episode does have a barn in the painting.
+
+1. Use data.table and `fread()` to read these data into R.
+```{r}
+library(data.table)
+library(readr)
+library(tidyverse)
+bob <- fread("../data/bob.csv")
+str(bob)
+```
+    
+2. Tidy these data by having new columns called "`ELEMENT`" and "`PRESENT`". 
+   `ELEMENT` should contain the name of the element included in the painting
+   and the variable `PRESENT` should be `1` if that element is present
+   and `0` otherwise. Your new `data.table` should look like this:
+```{r}
+bob <- melt(data = bob, 
+            id.vars = c("EPISODE", "TITLE"), 
+            measure.vars = colnames(bob)[3:69], 
+            variable.name = "ELEMENT", 
+            value.name = "PRESENT")
+bob
+```
+    
+3. The variable `EPISODE` contains both the season number and the episode number. 
+   Create two new variables called "`SEASON`" and "`EPISODE_NUM`". `SEASON`
+   should be a numeric containing the season number and `EPISODE_NUM` should
+   be a numeric containing the episode number within the season. 
+   Do this by reference. You can use readr parsers here.
+   Your data.table should look like this:
+```{r}
+bob[,c("SEASON", "EPISODE_NUM"):= tstrsplit(EPISODE, split="E")]
+bob[,SEASON := parse_number(SEASON)]
+bob[,EPISODE_NUM := parse_number(EPISODE_NUM)]
+
+head(bob)
+tail(bob)
+```
+    
+4. Recode the `PRESENT` variable to have values that are more human-readable.
+   Do this by reference.
+```{r}
+bob[, PRESENT:= as.character(PRESENT)]
+
+bob[PRESENT=="0", PRESENT := "UNPRESENT"]
+bob[PRESENT=="1", PRESENT := "PRESENT"]
+
+bob
+```
+
+5. Calculate the proportion of episodes each season that have each element. Save
+   these summaries in a new data.table. Arrange the rows in decreasing
+   order of proportion. Your data.table should look like this:
+```{r}
+newbob <- bob
+newbob[PRESENT=="UNPRESENT", PRESENT := "0"]
+newbob[PRESENT=="PRESENT", PRESENT := "1"]
+newbob[, PRESENT:= parse_number(PRESENT)]
+newbob
+
+
+newbob[, .(PROPORTION = mean(PRESENT)), by= .(ELEMENT,SEASON)][order(-PROPORTION)]
+
+```
+
+6. Did Bob draw trees less frequently over the seasons. Explore with an 
+   appropriate plot. You can use ggplot2 or base R.
+```{r}
+bob_tree <- bob[ELEMENT=="TREE", .(drawtree = sum(PRESENT)), by=.(SEASON)]
+bob_tree[, SEASON:= as.factor(SEASON)]
+
+bob_tree %>%
+   ggplot(aes(x= SEASON, y= drawtree))+
+   geom_point()+
+   geom_smooth(method="lm", se= FALSE)+
+   theme_bw()
+
+```
+
+7. Does Bob prefer conifers or deciduous trees? Justify your conclusions with
+   numerical summaries and a statistical test. 
+```{r}
+bob[ELEMENT == "CONIFER" | ELEMENT == "DECIDUOUS", .(MEAN_TREE = mean(PRESENT)), by= .(ELEMENT)]
+# Both two trees have similar mean. It is hard to tell Bob prefer which trees.
+
+bob_con <- bob[ELEMENT == "CONIFER" | ELEMENT == "DECIDUOUS", .(ELEMENT, PRESENT)]
+
+t.test(PRESENT~ ELEMENT, bob_con)
+
+# P-value is big (0.2893), we have very weak evidence to say that Bob prefer which trees.
+
+```
+
